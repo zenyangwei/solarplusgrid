@@ -1,0 +1,216 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Card from '../components/Card.astro';
+import CardDouble from '../components/Card-Double.astro';
+import axios from 'axios'
+import Puppeteer, { JSCoverage, Mouse } from 'puppeteer'
+import { error } from 'astro/dist/core/logger/core';
+import puppeteer from 'puppeteer';
+	
+
+	const browser = await puppeteer.launch()
+	
+	let page = await browser.newPage()
+	var rawData
+	var powerUsed = 0
+	var powerCost = 0
+
+
+	//Price Calculation Var
+	const bloc = [0, 200, 300, 600, 900]
+	var blocPrice = [0.218, 0.334, 0.516, 0.546, 0.571]
+	var finalPrice = 0
+	var lastBilled = 0
+	var tnbTime
+	var date = new Date
+
+	// const page = await browser.newPage()
+	
+	// TNB
+	await page.goto("https://www.mytnb.com.my", {waitUntil: "networkidle2", timeout: 0})
+	// await page.setViewport({width:1920, height:2000});
+	await page.type("#frm-login > div.container-fluid > div > div.col-sm-12.col-md-offset-7.col-md-5.col-lg-4 > div > div:nth-child(3) > input", "laipeng@gmail.com")
+	await page.type("#frm-login > div.container-fluid > div > div.col-sm-12.col-md-offset-7.col-md-5.col-lg-4 > div > div:nth-child(4) > input", "3588lpwong")
+	await Promise.all([page.click(".btn-white"), page.waitForNavigation(), console.log("Logged In")])
+	await Promise.all([page.waitForSelector('#dropdownMenuButton'), page.evaluate(() => {
+
+		$.ajax({
+                type: "POST",
+                url: "/AccountManagement/IndividualDashboard",
+                data: { AccountID: 'bf2619a1-2159-495d-9aff-21f092a8652a' },
+                success: function (result) {
+                    document.open();
+                    document.write(result);
+                    document.close();
+                }
+            })
+
+	}), console.log("Changed Account")])
+
+
+
+	// await Promise.all([page.waitForSelector('#modal-button-1 > div > button:nth-child(1)'), page.evaluate(async() => setTimeout(triggerAnnouncementCta('Portal_Action_MarketingPopUp_Later',''), 100000))])
+	rawData = await page.evaluate(() => 
+		{ return consumptionTrendingData})
+
+	lastBilled = rawData[rawData.length-1].BillingDateStr
+	powerUsed = rawData[rawData.length-1].ConsumptionValue
+	powerCost = rawData[rawData.length-1].BillAmountValueConverted
+
+	// console.log(rawData)
+
+	// SEMS
+	await page.goto("https://www.semsportal.com/home/login")
+	await page.setViewport({width:1000, height:2000});
+	console.log("logging in")
+	await page.type("#username", "wzenthong@gmail.com")
+	await page.type("#password", "weifamily123")
+
+	
+
+	await page.waitForSelector("#btnLogin")
+	await Promise.all([page.click("#btnLogin"), page.waitForNavigation(), console.log("Solar Logged In")])
+	console.log("logged in!")
+	console.log("Waiting for Data")
+	tnbTime = (" "+date.getDate().toString() + "-" +date.getMonth().toString() + "-" +date.getFullYear().toString()+ " "+ date.getHours().toString()+":"+date.getMinutes().toString()+":"+date.getSeconds().toString())
+	const [response] = await Promise.all([
+    	page.waitForResponse(response => response.url().includes('/PowerStation/GetPlantDetailByPowerstationId'))
+		
+	])
+
+	console.log(tnbTime)
+	
+
+	const dataObj = await response.json();
+	var powerGenerated = dataObj.data.kpi.month_generation
+	var solarTime = " "+ dataObj.data.info.time
+
+	//Nett Power
+	var p = powerUsed - powerGenerated
+
+//Price Calculation
+for(var i=0; i<((p/100)-1); i++){
+finalPrice += 100 * determinePrice(i)	
+}
+finalPrice += (p/100 - Math.floor(p/100))*100 * determinePrice(p/100)
+	
+	function determinePrice ( qty ) {
+		var prices = [
+			0.218, //1 to 100
+			0.218, //101 to 200
+			0.334, //201 to 300
+			0.516, //301 to 400
+			0.516, //401 to 500
+			0.516, //501 to 600
+			0.546, //601 to 700
+			0.546, //701 to 800
+			0.546, //801 to 900
+			0.571, //901+
+		];
+
+		qty = Math.floor( qty / 1);
+
+		//check for 600+, which are the same as 501 (last array item)
+		return prices[ qty ] || prices.pop();
+}
+
+	// function updatePG(pG){
+	// 	powerGenerated = pG
+	// 	console.log(powerGenerated)
+	// }
+
+
+
+	// powerGenerated = parseFloat(rawData2.toString())
+
+	// console.log(dataObj)
+
+	
+
+
+await browser.close
+
+---
+
+<Layout title="Welcome to Astro.">
+	<main>
+		<h1><span class="text-gradient">Power Usage</span></h1>
+		<p>TNB Refreshed:{tnbTime}</p>
+		<p>Solar Refreshed:{solarTime}</p>
+		<!-- <p class="instructions">
+			To get started, open the directory <code>src/pages</code> in your project.<br />
+			<strong>Code Challenge:</strong> Tweak the "Welcome to Astro" message above.
+		</p> -->
+		<ul role="list" class="link-card-grid">
+			<CardDouble 
+				href="/"
+				title={"-"+(powerUsed.toString()) + " kWh"} 
+				title2={"+" +(powerGenerated).toString() + " kWh"}
+				title3={(powerGenerated-powerUsed).toString() + " kWh"} 
+				body="Used (Month)"
+				body2="Generated (Month)"
+				body3="Nett Used (Month)"
+			/>
+			<CardDouble
+				href="/"
+				title={"-RM" + powerCost.toFixed(2)}
+				title2={"RM" + (powerCost-finalPrice).toFixed(2)}
+				title3={"-RM" + (finalPrice).toFixed(2)}
+				body="Cost (Month)"
+				body2="Est. Income (Month)"
+				body3="Est. Nett (Month)"
+
+			/>
+			
+		</ul>
+	</main>
+
+	<!-- <script define:vars={{ powerUsed, powerCost }}>
+		console.log(powerUsed, powerCost)
+	</script> -->
+</Layout>
+
+<style>
+	main {
+		margin: auto;
+		padding: 1.5rem;
+		max-width: 60ch;
+	}
+	h1 {
+		font-size: 3rem;
+		font-weight: 800;
+		margin: 0;
+	}
+	.text-gradient {
+		background-image: var(--accent-gradient);
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-size: 400%;
+		background-position: 0%;
+	}
+	.instructions {
+		line-height: 1.6;
+		margin: 1rem 0;
+		border: 1px solid rgba(var(--accent), 25%);
+		background-color: white;
+		padding: 1rem;
+		border-radius: 0.4rem;
+	}
+	.instructions code {
+		font-size: 0.875em;
+		font-weight: bold;
+		background: rgba(var(--accent), 12%);
+		color: rgb(var(--accent));
+		border-radius: 4px;
+		padding: 0.3em 0.45em;
+	}
+	.instructions strong {
+		color: rgb(var(--accent));
+	}
+	.link-card-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(24ch, 1fr));
+		gap: 1rem;
+		padding: 0;
+	}
+</style>
